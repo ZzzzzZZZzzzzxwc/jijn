@@ -699,18 +699,21 @@ class Counter:
             self.n += 1
 ```
 
-或用 itertools.count（C 实现，next() 是原子的）：
+或用 `threading.Lock`：
 
 ```python
-from itertools import count
+import threading
 
 class Counter:
     def __init__(self):
-        self._counter = count()
         self.n = 0
+        self._lock = threading.Lock()
     def incr(self):
-        self.n = next(self._counter) + 1
+        with self._lock:
+            self.n += 1
 ```
+
+> ⚠️ 注意：有人建议用 `itertools.count` + `next()` 来做原子递增，但这仍不能保证 `self.n` 的赋值是线程安全的。**正确做法是用锁**。
 </details>
 
 ### 练习 10.4（综合）
