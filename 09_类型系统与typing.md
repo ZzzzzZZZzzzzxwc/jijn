@@ -256,6 +256,37 @@ def parse_json(s: str) -> Any:    # 不知道是什么类型
 
 ---
 
+## 9.3b @overload（函数重载签名）
+
+> **💡 当函数根据参数类型返回不同类型时，用 `@overload` 让类型检查器精确推断。**
+
+```python
+from typing import overload
+
+@overload
+def process(x: int) -> str: ...
+@overload
+def process(x: str) -> list[str]: ...
+
+def process(x: int | str) -> str | list[str]:
+    """实际实现（不需要装饰器）"""
+    if isinstance(x, int):
+        return str(x)
+    return x.split()
+
+# mypy 推断：
+result1 = process(42)       # result1: str ✅
+result2 = process("a b c")  # result2: list[str] ✅
+```
+
+**与 Union 的区别**：
+- `Union` 返回：`process(42)` 的类型是 `str | list[str]`（模糊）
+- `@overload`：`process(42)` 的类型精确为 `str`
+
+**使用场景**：标准库 `open()` 就用了 @overload（`mode="r"` 返回 `TextIOWrapper`，`mode="rb"` 返回 `BufferedReader`）。
+
+---
+
 ## 9.4 泛型 TypeVar
 
 ### 9.4.1 为什么需要泛型
