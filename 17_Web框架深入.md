@@ -335,6 +335,37 @@ u = User(name="Alice", age=30, email="a@b.c")    # ✅
 # u = User(name="", age=-1, email="x")           # ❌ ValidationError
 ```
 
+#### ⚠️ Pydantic v1 → v2 迁移速查
+
+Pydantic v2（2023.06+）是**破坏性重写**（Rust core），API 大量改名：
+
+| v1 | v2 | 说明 |
+|---|---|---|
+| `.dict()` | `.model_dump()` | 导出为字典 |
+| `.json()` | `.model_dump_json()` | 导出为 JSON 字符串 |
+| `.parse_obj(data)` | `.model_validate(data)` | 从字典创建 |
+| `.parse_raw(json_str)` | `.model_validate_json(json_str)` | 从 JSON 创建 |
+| `@validator` | `@field_validator` | 字段校验器 |
+| `@root_validator` | `@model_validator` | 模型级校验 |
+| `class Config:` | `model_config = ConfigDict(...)` | 配置方式 |
+| `Optional[X] = None` | `X | None = None` | 类型注解 |
+
+```python
+# v2 推荐写法
+from pydantic import ConfigDict
+
+class User(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True)
+    name: str
+    age: int
+
+u = User(name="Alice", age=30)
+print(u.model_dump())           # {'name': 'Alice', 'age': 30}
+print(u.model_dump_json())      # '{"name":"Alice","age":30}'
+```
+
+> 🔬 **性能提升**：v2 核心用 Rust（pydantic-core）重写，验证速度比 v1 快 5-50x。**新项目一律用 v2**。
+
 🔬 **Pydantic v2 原理**：用 Rust 实现的核心（pydantic-core），从类型注解生成验证 schema。性能比 v1 快 5-50 倍。
 
 ### 17.4.6 自动 OpenAPI

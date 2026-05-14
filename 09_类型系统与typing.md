@@ -322,7 +322,12 @@ def maximum(items: list[T]) -> T:
 
 ---
 
-## 9.5 泛型类 Generic
+## 9.5 泛型：TypeVar 与 Generic
+
+> ⚠️ **如果你的项目已用 Python 3.12+，直接跳到 §9.5b 看新语法**——更短、更清晰。  
+> 本节保留旧写法作为"兼容参考"（3.9-3.11 项目仍需要）。
+
+### 9.5.1 旧写法（3.9-3.11 兼容）
 
 ```python
 from typing import TypeVar, Generic
@@ -355,7 +360,7 @@ str_stack.push("hello")
 
 ---
 
-## 9.5b ★ PEP 695：新泛型语法（3.12+）
+## 9.5b ★ PEP 695：新泛型语法（3.12+，推荐）
 
 > **本节是 3.12 的旗舰特性**。如果你的项目已 3.12+，**强烈推荐用新语法**——更短、更清晰、不需要 import TypeVar。
 

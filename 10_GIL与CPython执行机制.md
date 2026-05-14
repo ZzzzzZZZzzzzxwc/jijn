@@ -257,6 +257,8 @@ GIL 是最简单的解决方案：**全局只有一个线程能动 PyObject**。
 
 ### 10.4.3 🔬 GIL 的实际行为
 
+> ⚠️ **关键区分**：§10.4.2 说"GIL 保护 `ob_refcnt`"——这是**解释器内部**的引用计数操作。下面演示的 `count += 1` 是**用户代码层面**的整数加法，涉及**多条字节码**（LOAD → ADD → STORE）。GIL 可能在字节码边界释放——所以即使有 GIL，用户的 `count += 1` 仍然不安全。
+
 ```python
 import threading
 import time
@@ -416,9 +418,112 @@ def parallel_sum(arr):
 
 不真并行，但单线程内通过协作式调度处理大量 I/O。详见第 12 章。
 
-### 方案 5：免 GIL Python（Python 3.13+）
+### 方案 5：子解释器（PEP 684，Python 3.12+）
 
-PEP 703：实验性的 "no-GIL" 构建。需要专门编译，仍在演进中。
+🔬 **每个子解释器拥有独立 GIL**，但共享同一进程内存。
+
+```python
+# 3.12+ 标准库 _xxsubinterpreters（实验性）
+# 3.13+ 改名为 interpreters（仍为实验性模块）
+import _xxsubinterpreters as interpreters
+
+interp = interpreters.create()
+interpreters.run_string(interp, "print('hello from sub-interpreter')")
+interpreters.destroy(interp)
+```
+
+**与多进程对比**：
+
+| | multiprocessing | 子解释器 (PEP 684) |
+|--|---|---|
+| GIL | 各进程独立 | 各解释器独立 |
+| 内存隔离 | 完全隔离 | 共享进程地址空间（但 PyObject 不共享） |
+| 通信 | pickle / Queue / pipe | 共享内存 / channel（PEP 554 进行中） |
+| 启动开销 | 大（fork/spawn 整个进程） | 小（新建解释器状态即可） |
+| C 扩展兼容 | 几乎全兼容 | **需要 C 扩展支持 PEP 630 multi-phase init** |
+
+**限制**：
+- 不能在子解释器间共享 Python 对象（没有引用传递）
+- 需要 C 扩展（NumPy 等）适配 PEP 630；未适配的扩展会报 `ImportError`
+- 3.12/3.13 仍标为实验性 API，接口可能变
+
+**适用场景**：同一进程内需要真并行 Python 代码，且通信数据量大（共享内存比 pickle 快几个数量级）。
+
+---
+
+### 方案 6：免 GIL Python（PEP 703，Python 3.13+）
+
+3.13 引入 **free-threaded build**（`python3.13t`）：编译时完全移除 GIL。
+
+```bash
+# 安装 free-threaded build（需要专门编译或 deadsnakes PPA）
+python3.13t -c "import sys; print(sys.flags.no_gil)"  # True
+```
+
+**代价（3.13 实测）**：
+- 单线程性能退化 ~10-40%（需要更多原子操作 / per-object lock）
+- C 扩展必须声明 `Py_mod_gil = Py_MOD_GIL_NOT_USED`，否则回退到有 GIL 模式
+- NumPy 等大库仍在适配中
+
+**何时用**：
+- 你有大量 CPU 密集纯 Python 代码需要真并行
+- 你愿意承受单线程退化 + 等待生态成熟
+
+**与子解释器的关系**：两个方案不冲突——子解释器在 free-threaded build 中仍然有用（隔离状态 / 安全沙箱）。
+
+---
+
+### 方案 7：实验性 JIT（PEP 744，Python 3.13+）
+
+3.13 引入 **copy-and-patch JIT**（需编译时 `--enable-experimental-jit`）：
+
+- 在 PEP 659 自适应解释器基础上，对"热"专用指令编译为机器码
+- 3.13 首版加速有限（~5%），但为后续迭代（tier 2 optimizer）打下基础
+- **用户无需改代码**——全自动，但默认关闭
+
+```bash
+# 3.13 编译时启用
+./configure --enable-experimental-jit
+make
+```
+
+> 🔬 **演进方向**：3.14+ 计划持续优化 JIT，目标是逐步追上 PyPy 的 JIT 加速效果。
+
+---
+
+## 10.6.1 GIL 切换的底层机制：eval breaker
+
+🔬 **CPython 实现**：GIL 切换不是"定时器中断"，而是 **eval breaker 标志位轮询**。
+
+```c
+// Python/ceval.c（简化）
+_PyEval_EvalFrameDefault(frame) {
+    for (;;) {
+        // ★ 每条字节码执行前检查 eval_breaker
+        if (_Py_atomic_load(&tstate->interp->ceval.eval_breaker)) {
+            // 可能是：GIL drop request / signal / async exception / gc
+            if (drop_gil_requested) {
+                drop_gil(tstate);
+                take_gil(tstate);   // 重新竞争
+            }
+            if (pending_signal) handle_signal();
+            if (pending_calls) make_pending_calls();
+        }
+        
+        // 正常 dispatch 字节码
+        DISPATCH();
+    }
+}
+```
+
+**eval_breaker 被设置的时机**：
+1. 另一个线程请求 GIL（`_PyEval_SignalAsyncExc`）
+2. `sys.setswitchinterval` 定时器到期
+3. 收到 OS signal（SIGINT 等）
+4. `gc.collect()` 请求
+5. `sys.settrace` / `sys.monitoring` 回调
+
+→ 这就是为什么 GIL 切换只在"字节码边界"发生——不是真正的抢占，而是每条指令前的协作式检查。
 
 ---
 
