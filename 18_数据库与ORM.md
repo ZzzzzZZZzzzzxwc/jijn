@@ -252,8 +252,13 @@ users = session.scalars(
 |---------|------|-----------|------|
 | READ UNCOMMITTED | ❌ | ❌ | ❌ |
 | READ COMMITTED | ✅ | ❌ | ❌ |
-| REPEATABLE READ | ✅ | ✅ | ❌ (PG 含幻读) |
+| REPEATABLE READ | ✅ | ✅ | (见下) |
 | SERIALIZABLE | ✅ | ✅ | ✅ |
+
+> 📌 **标准 SQL 规定 RR 允许幻读**，但实际：
+> - **MySQL InnoDB**：RR + next-key locking → 大部分场景已避免幻读
+> - **PostgreSQL**：RR 实际是 Snapshot Isolation → 避免幻读，但仍有 write skew 等快照异常
+> - **SERIALIZABLE**：才能避免所有快照异常（PG 用 SSI；MySQL 用纯锁）
 
 ### 18.6.2 SQLAlchemy 中使用
 

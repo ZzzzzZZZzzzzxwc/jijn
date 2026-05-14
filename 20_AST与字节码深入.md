@@ -199,8 +199,8 @@ c.co_names         # ()                   全局/属性名
 c.co_freevars      # ()                   闭包变量
 c.co_cellvars      # ()                   被内层引用的变量
 c.co_code          # b'\x97\x00...'      字节码
-c.co_lnotab        # 行号表（旧）
-c.co_lines()       # 行号迭代器（PEP 626，3.10+）
+c.co_lnotab        # ⚠️ 3.12 起 DeprecationWarning，3.15 计划移除——改用 co_lines() / co_linetable
+c.co_lines()       # 行号迭代器（PEP 626，3.10+，推荐）
 c.co_positions()   # 精确位置（PEP 657，3.11+）
 ```
 
@@ -369,7 +369,7 @@ exec(f"x = {user_input}")
 - PEP 659：自适应专用解释器，运行时根据实际类型把通用指令换成专用指令
 - 帧栈优化：减少 frame 对象分配
 - 启动加速：MARSHAL 优化、import 路径优化
-- 整体 3.12 比 3.10 快 25-60%
+- 整体 3.12 比 3.10 大约快 **30%**（pyperformance 几何均值：3.11 vs 3.10 ≈ +25%，3.12 vs 3.11 再 +5%）。**个别 micro-benchmark 可达 60%，但不能代表整体加速。**
 
 ### Q4：什么时候需要直接操作 AST？
 

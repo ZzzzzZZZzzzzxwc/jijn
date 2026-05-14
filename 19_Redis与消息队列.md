@@ -267,7 +267,7 @@ def charge_user(self, user_id, amount, idempotency_key):
         return  # 已处理过，直接跳过
     try:
         do_charge(user_id, amount)
-    except TransientError as e:
+    except (ConnectionError, TimeoutError) as e:   # 替换为你自己的瞬态异常基类（Celery 没有内置 TransientError）
         raise self.retry(exc=e, countdown=60)
 ```
 

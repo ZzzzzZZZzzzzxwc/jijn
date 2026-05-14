@@ -200,7 +200,7 @@ typedef struct {
 import sys
 
 # CPython 3.12（64 位 Linux）— 实际数值随版本与平台不同
-print(sys.getsizeof(0))          # 24~28  (PEP 683 之后头部缩短)
+print(sys.getsizeof(0))          # 24（CPython 3.12 紧凑 long 表示，单 digit 内嵌到 PyVarObject）
 print(sys.getsizeof(1000))       # 28
 print(sys.getsizeof(10**20))     # 36   (超过单 digit 容量)
 
@@ -208,7 +208,7 @@ print(sys.getsizeof([]))         # 56   (list 头 + 空 ob_item)
 print(sys.getsizeof([1]))        # 64
 ```
 
-> 🔬 **PEP 683（3.12+，"不可变" PyObject 引用计数）**：3.12 引入了 _Py_IMMORTAL_REFCNT，部分常用对象（None、True、False、小整数）成为 immortal——引用计数不再增减，性能略升。同时 PyObject 头部布局微调，`sys.getsizeof` 数值可能与 3.11 不同。**生产代码不要依赖具体大小**，而要用 `sys.getsizeof` 实测。
+> 🔬 **PEP 683（3.12+，immortal objects）** **只把 `ob_refcnt` 锁定为不变值**（避免 None/True/False/小整数因 refcount 抖动引起的 cache line 失效），**不改变对象大小**。3.12 中 `int(0)` 占 24 字节是另一个独立优化（GH-92356/GH-101291：单 digit 长整数内嵌到 `PyVarObject`），与 PEP 683 无关。**生产代码不要依赖具体大小**，要用 `sys.getsizeof` 实测。
 
 **对比**：C 语言 `int` 是 4-8 字节，Python 整数最少 24+ 字节——这是 PyObject 头部（refcount + type 指针）的开销。
 
@@ -593,7 +593,8 @@ class Counter:
         self.n += 1
 ```
 
-**答**：**不安全**。`self.n += 1` 在字节码层面是多步操作（LOAD/ADD/STORE），GIL 可能在中间释放。需要用 `threading.Lock` 或 `itertools.count()`（C 实现，原子）。
+**答**：**不安全**。`self.n += 1` 在字节码层面是多步操作（LOAD_ATTR / BINARY_OP / STORE_ATTR），GIL 可能在中间释放。需要用 `threading.Lock`。  
+⚠️ 注意 `itertools.count()` 单独用是原子的，但配合 `self.n = next(c) + 1` **不是**——`STORE_ATTR` 仍是独立字节码，两线程仍会相互覆盖。详见练习 10.3。
 
 ---
 
@@ -699,18 +700,18 @@ class Counter:
             self.n += 1
 ```
 
-或用 itertools.count（C 实现，next() 是原子的）：
-
-```python
-from itertools import count
-
-class Counter:
-    def __init__(self):
-        self._counter = count()
-        self.n = 0
-    def incr(self):
-        self.n = next(self._counter) + 1
-```
+> ⚠️ **常见伪修复**：用 `itertools.count()` 配合 `self.n = next(self._counter) + 1` —— **依然不安全**！  
+> `next(count)` 在 C 层确实原子，但接下来的 `self.n = X` 是独立的 `STORE_ATTR` 字节码：两个线程可能同时拿到 `next` 然后乱序写入 `self.n`，仍然丢更新。  
+> 如果要避开锁，只能让"递增"和"读取"是同一次原子调用：
+> ```python
+> from itertools import count
+> class Counter:
+>     def __init__(self):
+>         self._counter = count(1)
+>     def value(self):
+>         return next(self._counter)   # 每次调用返回递增后的值，没有"中间状态"可被打断
+> ```
+> 这才是真正绕过锁的方式。
 </details>
 
 ### 练习 10.4（综合）
