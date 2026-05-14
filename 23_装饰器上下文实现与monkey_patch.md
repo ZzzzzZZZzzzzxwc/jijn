@@ -430,20 +430,29 @@ monkey.patch_all()        # 替换 socket / threading 等为协作式版本
 
 ### 23.5.4 ⚠️ 哪些不能 patch
 
-```python
-# 大多数 builtin 不可改
-int.foo = 42              # ❌ TypeError: cannot set 'foo' attribute of int
+🔬 **CPython 规则**：所有 **C 实现的内建类型** 都不可 setattr。这不是"大多数"，是**全部**。原因是 PyType_Ready 之后这些类型的 `tp_flags` 不含 `Py_TPFLAGS_HEAPTYPE`，CPython 拒绝在它们的 `tp_dict` 上写。
 
-# 内置类型方法不可换
-list.append = my_append   # ❌
+```python
+# 所有内建 C 类型都不行：
+int.foo = 42              # ❌ TypeError: cannot set 'foo' attribute of immutable type 'int'
+list.append = lambda *a: None  # ❌ 同样禁止
+str.upper = lambda s: s   # ❌
+dict.foo = 42             # ❌
+
+# 验证 tp_flags 不含 HEAPTYPE
+print(int.__flags__ & 0x200)   # 0  (不是 heap type)
+class Foo: pass
+print(Foo.__flags__ & 0x200)   # 512 (是 heap type，可改)
 ```
 
-但你**自己定义的类**可以：
+但**Python 定义的类**（heap type）可以：
 ```python
 class Foo: pass
 Foo.bar = 42              # ✅
 Foo().bar                 # 42
 ```
+
+**强行 patch 内建类型**：要走 ctypes 黑魔法（`forbiddenfruit` 库），生产严禁——会破坏所有依赖该类型的代码。
 
 ### 23.5.5 ⚠️ Monkey Patch 的代价
 

@@ -355,6 +355,125 @@ str_stack.push("hello")
 
 ---
 
+## 9.5b ★ PEP 695：新泛型语法（3.12+）
+
+> **本节是 3.12 的旗舰特性**。如果你的项目已 3.12+，**强烈推荐用新语法**——更短、更清晰、不需要 import TypeVar。
+
+### 9.5b.1 泛型函数
+
+```python
+# 旧（仍可用）
+from typing import TypeVar
+T = TypeVar('T')
+def first(items: list[T]) -> T:
+    return items[0]
+
+# 新（PEP 695，3.12+）
+def first[T](items: list[T]) -> T:
+    return items[0]
+```
+
+### 9.5b.2 泛型类
+
+```python
+# 旧
+from typing import TypeVar, Generic
+T = TypeVar('T')
+class Stack(Generic[T]):
+    def push(self, x: T): ...
+    def pop(self) -> T: ...
+
+# 新（3.12+）
+class Stack[T]:
+    def push(self, x: T): ...
+    def pop(self) -> T: ...
+```
+
+### 9.5b.3 类型别名
+
+```python
+# 旧
+from typing import TypeAlias
+Vector: TypeAlias = list[float]
+
+# 新（3.12+）：type 是软关键字
+type Vector = list[float]
+type Tree[T] = T | list[Tree[T]]   # 泛型别名 + 自递归
+```
+
+### 9.5b.4 约束与边界
+
+```python
+# 边界（必须是 Comparable 子类）
+class SortedList[T: Comparable]:
+    ...
+
+# 多约束
+def f[T: (int, float)](x: T) -> T:    # T 只能是 int 或 float
+    return x * 2
+```
+
+### 9.5b.5 🔬 底层差异
+
+```python
+# PEP 695 创建的 TypeVar 是真正"作用域局部"的
+class Stack[T]:
+    pass
+
+print(Stack.__type_params__)   # (T,)  ← 类有 __type_params__
+# 旧 TypeVar 是模块级全局，可能跨类共享
+```
+
+→ 新语法的 TypeVar 仅在该类/函数内可见，避免全局污染。
+
+---
+
+## 9.5c PEP 563/649：注解的延迟求值
+
+### 注解默认是"立即求值"
+
+```python
+# 默认行为：注解在 class/def 定义时求值
+class Tree:
+    def __init__(self, parent: Tree):    # ❌ NameError: Tree 还没定义完
+        pass
+```
+
+### 解决 1：from __future__ import annotations（PEP 563）
+
+```python
+from __future__ import annotations    # ★ 所有注解变成字符串
+
+class Tree:
+    def __init__(self, parent: Tree):   # ✅ 不再求值，仅当字符串保存
+        pass
+
+# 副作用：__annotations__ 变成字符串
+print(Tree.__init__.__annotations__)
+# {'parent': 'Tree'}    ← 注意是字符串
+
+# 框架要拿到真实类型需用 typing.get_type_hints()
+import typing
+print(typing.get_type_hints(Tree.__init__))
+# {'parent': <class '__main__.Tree'>}
+```
+
+### 解决 2：字符串注解（手动）
+
+```python
+class Tree:
+    def __init__(self, parent: "Tree"):    # ✅ 字符串始终是延迟的
+        pass
+```
+
+### PEP 649（3.13+，规划中）
+
+3.13 计划用 PEP 649（lazy annotations via descriptors）替代 PEP 563。届时注解默认延迟求值，但访问时返回真实对象——既解决前向引用，又保持类型对象可用。
+
+→ **3.12 项目推荐**：在每个 .py 文件顶部加 `from __future__ import annotations`，性能更好（注解不求值），所有注解自动变字符串。
+
+---
+
 ## 9.6 Protocol（结构化子类型）
 
 ### 9.6.1 鸭子类型 + 类型检查

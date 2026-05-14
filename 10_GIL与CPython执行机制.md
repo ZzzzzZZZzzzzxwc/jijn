@@ -66,7 +66,7 @@ Python 既编译也解释：
 import os, py_compile
 
 py_compile.compile("my_module.py")
-# 生成 __pycache__/my_module.cpython-311.pyc
+# 生成 __pycache__/my_module.cpython-312.pyc  (CPython 3.12)
 ```
 
 ### 10.1.2 🔬 dis 模块：查看字节码
@@ -102,7 +102,7 @@ dis.dis(add)
 ```bash
 $ python -c "import my_module"
 $ ls __pycache__/
-my_module.cpython-311.pyc
+my_module.cpython-312.pyc
 ```
 
 `.pyc` 文件包含：
@@ -199,15 +199,18 @@ typedef struct {
 ```python
 import sys
 
-print(sys.getsizeof(0))          # 输出: 28  (Python 3.11)
-print(sys.getsizeof(1000))       # 输出: 28
-print(sys.getsizeof(10**20))     # 输出: 36  (超过单 digit 容量)
+# CPython 3.12（64 位 Linux）— 实际数值随版本与平台不同
+print(sys.getsizeof(0))          # 24~28  (PEP 683 之后头部缩短)
+print(sys.getsizeof(1000))       # 28
+print(sys.getsizeof(10**20))     # 36   (超过单 digit 容量)
 
-print(sys.getsizeof([]))         # 输出: 56
-print(sys.getsizeof([1]))        # 输出: 64
+print(sys.getsizeof([]))         # 56   (list 头 + 空 ob_item)
+print(sys.getsizeof([1]))        # 64
 ```
 
-**对比**：C 语言 `int` 是 4 字节，Python 整数最少 28 字节——这是 PyObject 头部的开销。
+> 🔬 **PEP 683（3.12+，"不可变" PyObject 引用计数）**：3.12 引入了 _Py_IMMORTAL_REFCNT，部分常用对象（None、True、False、小整数）成为 immortal——引用计数不再增减，性能略升。同时 PyObject 头部布局微调，`sys.getsizeof` 数值可能与 3.11 不同。**生产代码不要依赖具体大小**，而要用 `sys.getsizeof` 实测。
+
+**对比**：C 语言 `int` 是 4-8 字节，Python 整数最少 24+ 字节——这是 PyObject 头部（refcount + type 指针）的开销。
 
 ### 10.3.3 这就是 GIL 存在的根本原因
 

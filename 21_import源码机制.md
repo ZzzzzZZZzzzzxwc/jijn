@@ -212,16 +212,20 @@ project/
 
 ## 21.5 包（package）的特殊处理
 
-### 21.5.1 普通包
+### 21.5.1 常规包（Regular Package）
 
 ```
 mypkg/
-├── __init__.py     # 必须有（Python 2 强制；3 推荐）
+├── __init__.py     # 有 → 常规包；无 → 命名空间包（3.3+，PEP 420）
 ├── module_a.py
 └── sub/
     ├── __init__.py
     └── module_b.py
 ```
+
+> **澄清**：Python 2 强制要求 `__init__.py`。**Python 3.3+ 引入命名空间包后**，`__init__.py` 是 **可选** 的——但有它和没它**行为不同**：
+> - **有** `__init__.py` → 常规包，可放初始化代码、控制 `__all__`、提供包级 API
+> - **无** `__init__.py` → 命名空间包，多个 `sys.path` 路径下同名目录会 **自动合并**（见下节）
 
 ### 21.5.2 命名空间包（PEP 420，3.3+）
 
@@ -251,6 +255,26 @@ from .module_a import ClassA
 执行 `import mypkg.module_b` 时：
 1. 先执行 `mypkg/__init__.py`（包初始化）
 2. 再执行 `mypkg/module_b.py`
+
+---
+
+### 21.5.4 🔬 import 全局锁
+
+CPython 实现 import 时持有 **全局 import 锁**（`_imp.acquire_lock()`），保证同一时刻只有一个线程在执行模块顶层代码。
+
+**为什么需要**：
+- 模块顶层代码（class/def/赋值）通过执行 .py 文件运行一次
+- 多线程同时 `import x` 时若没有锁，可能两个线程都在初始化 → 状态错乱
+
+**陷阱**：
+```python
+# Thread A: import a → 触发 a.py 执行，持有锁
+# Thread B: import a → 等待锁
+# 但 a.py 顶层代码里又启动了 Thread C 并 join...
+# Thread C: import a → 等待锁 → A 等 C → 死锁
+```
+
+→ 不要在模块顶层 `start()` + `join()` 子线程；要 `if __name__ == "__main__"` 保护。
 
 ---
 
